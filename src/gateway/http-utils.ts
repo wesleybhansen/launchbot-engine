@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import {
   buildAllowedModelSet,
   isCliProvider,
   modelKey,
   parseModelRef,
+  resolveDefaultModelForAgent,
 } from "../agents/model-selection.js";
 import { loadConfig } from "../config/config.js";
 import { buildAgentMainSessionKey, normalizeAgentId } from "../routing/session-key.js";
@@ -75,17 +75,19 @@ export async function resolveOpenAiCompatModelOverride(params: {
     return {};
   }
 
-  const parsed = parseModelRef(raw, DEFAULT_PROVIDER);
+  const cfg = loadConfig();
+  const defaultModelRef = resolveDefaultModelForAgent({ cfg, agentId: params.agentId });
+  const defaultProvider = defaultModelRef.provider;
+  const parsed = parseModelRef(raw, defaultProvider);
   if (!parsed) {
     return { errorMessage: "Invalid `model`." };
   }
 
-  const cfg = loadConfig();
   const catalog = await loadGatewayModelCatalog();
   const allowed = buildAllowedModelSet({
     cfg,
     catalog,
-    defaultProvider: DEFAULT_PROVIDER,
+    defaultProvider,
     agentId: params.agentId,
   });
   const normalized = modelKey(parsed.provider, parsed.model);

@@ -86,6 +86,21 @@ describe("OpenAI-compatible embeddings HTTP API (e2e)", () => {
       { object: "embedding", index: 0, embedding: [0.1, 0.2] },
       { object: "embedding", index: 1, embedding: [1.1, 1.2] },
     ]);
+
+    const qualified = await postEmbeddings({
+      model: "openai/text-embedding-3-small",
+      input: "hello again",
+    });
+    expect(qualified.status).toBe(200);
+    const qualifiedJson = (await qualified.json()) as { model?: string };
+    expect(qualifiedJson.model).toBe("openai/text-embedding-3-small");
+    const lastCall = createEmbeddingProviderMock.mock.calls.at(-1)?.[0] as
+      | { provider?: string; model?: string }
+      | undefined;
+    expect(lastCall).toMatchObject({
+      provider: "openai",
+      model: "text-embedding-3-small",
+    });
   });
 
   it("supports base64 encoding and agent-scoped auth/config resolution", async () => {
@@ -119,16 +134,16 @@ describe("OpenAI-compatible embeddings HTTP API (e2e)", () => {
     expect(json.error?.type).toBe("invalid_request_error");
   });
 
-  it("rejects provider-prefixed model overrides", async () => {
+  it("rejects disallowed provider-prefixed model overrides", async () => {
     const res = await postEmbeddings({
-      model: "openai/text-embedding-3-small",
+      model: "ollama/nomic-embed-text",
       input: "hello",
     });
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error?: { type?: string; message?: string } };
     expect(json.error).toEqual({
       type: "invalid_request_error",
-      message: "Provider prefixes are not allowed on `/v1/embeddings`.",
+      message: "This agent does not allow that embedding provider on `/v1/embeddings`.",
     });
   });
 

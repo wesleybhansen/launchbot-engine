@@ -7,6 +7,7 @@ import { logWarn } from "../logger.js";
 import {
   createEmbeddingProvider,
   type EmbeddingProviderOptions,
+  type EmbeddingProviderId,
   type EmbeddingProviderRequest,
 } from "../memory/embeddings.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
@@ -35,6 +36,12 @@ const DEFAULT_EMBEDDINGS_BODY_BYTES = 5 * 1024 * 1024;
 const MAX_EMBEDDING_INPUTS = 128;
 const MAX_EMBEDDING_INPUT_CHARS = 8_192;
 const MAX_EMBEDDING_TOTAL_CHARS = 65_536;
+const SAFE_AUTO_EXPLICIT_PROVIDERS = new Set<EmbeddingProviderId>([
+  "openai",
+  "gemini",
+  "voyage",
+  "mistral",
+]);
 
 function coerceRequest(value: unknown): EmbeddingsRequest {
   return value && typeof value === "object" ? (value as EmbeddingsRequest) : {};
@@ -73,6 +80,43 @@ function validateInputTexts(texts: string[]): string | undefined {
     }
   }
   return undefined;
+}
+
+function resolveEmbeddingsTarget(params: {
+  requestModel: string;
+  configuredProvider: EmbeddingProviderRequest;
+}): { provider: EmbeddingProviderRequest; model: string } | { errorMessage: string } {
+  const raw = params.requestModel.trim();
+  const slash = raw.indexOf("/");
+  if (slash === -1) {
+    return { provider: params.configuredProvider, model: raw };
+  }
+
+  const provider = raw.slice(0, slash).trim().toLowerCase() as EmbeddingProviderRequest;
+  const model = raw.slice(slash + 1).trim();
+  if (!model) {
+    return { errorMessage: "Unsupported embedding model reference." };
+  }
+
+  if (params.configuredProvider === "auto") {
+    if (provider === "auto") {
+      return { provider: "auto", model };
+    }
+    if (SAFE_AUTO_EXPLICIT_PROVIDERS.has(provider)) {
+      return { provider, model };
+    }
+    return {
+      errorMessage: "This agent does not allow that embedding provider on `/v1/embeddings`.",
+    };
+  }
+
+  if (provider !== params.configuredProvider) {
+    return {
+      errorMessage: "This agent does not allow that embedding provider on `/v1/embeddings`.",
+    };
+  }
+
+  return { provider: params.configuredProvider, model };
 }
 
 export async function handleOpenAiEmbeddingsHttpRequest(
@@ -126,22 +170,26 @@ export async function handleOpenAiEmbeddingsHttpRequest(
   const agentId = resolveAgentIdFromHeader(req) ?? "main";
   const agentDir = resolveAgentDir(cfg, agentId);
   const memorySearch = resolveMemorySearchConfig(cfg, agentId);
-  if (requestModel.includes("/")) {
+  const configuredProvider = (memorySearch?.provider ?? "openai") as EmbeddingProviderRequest;
+  const target = resolveEmbeddingsTarget({
+    requestModel,
+    configuredProvider,
+  });
+  if ("errorMessage" in target) {
     sendJson(res, 400, {
       error: {
-        message: "Provider prefixes are not allowed on `/v1/embeddings`.",
+        message: target.errorMessage,
         type: "invalid_request_error",
       },
     });
     return true;
   }
-  const provider = (memorySearch?.provider ?? "openai") as EmbeddingProviderRequest;
 
   const options: EmbeddingProviderOptions = {
     config: cfg,
     agentDir,
-    provider,
-    model: requestModel,
+    provider: target.provider,
+    model: target.model,
     // Public HTTP embeddings should fail closed rather than silently mixing
     // vector spaces across fallback providers/models.
     fallback: "none",
@@ -181,7 +229,10 @@ export async function handleOpenAiEmbeddingsHttpRequest(
         index,
         embedding: encodingFormat === "base64" ? encodeEmbeddingBase64(embedding) : embedding,
       })),
-      model: requestModel,
+      model:
+        requestModel.includes("/") || target.provider === "auto"
+          ? requestModel
+          : `${target.provider}/${target.model}`,
       usage: {
         prompt_tokens: 0,
         total_tokens: 0,

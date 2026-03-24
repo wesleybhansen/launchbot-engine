@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { resolveAgentDir } from "../agents/agent-scope.js";
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
 import { loadConfig } from "../config/config.js";
 import {
@@ -126,6 +127,7 @@ export async function handleOpenAiEmbeddingsHttpRequest(
 
   const cfg = loadConfig();
   const agentId = resolveAgentIdFromHeader(req) ?? "main";
+  const agentDir = resolveAgentDir(cfg, agentId);
   const memorySearch = resolveMemorySearchConfig(cfg, agentId);
   const inferred = inferProviderAndModel({
     requestModel,
@@ -140,9 +142,12 @@ export async function handleOpenAiEmbeddingsHttpRequest(
 
   const options: EmbeddingProviderOptions = {
     config: cfg,
+    agentDir,
     provider: inferred.provider,
     model: inferred.model,
-    fallback: memorySearch?.fallback ?? "none",
+    // Public HTTP embeddings should fail closed rather than silently mixing
+    // vector spaces across fallback providers/models.
+    fallback: "none",
     local: memorySearch?.local,
     remote: memorySearch?.remote
       ? {

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { resolveAgentDir } from "../agents/agent-scope.js";
 import { getFreePort, installGatewayTestHooks } from "./test-helpers.js";
 
 installGatewayTestHooks({ scope: "suite" });
@@ -87,7 +88,7 @@ describe("OpenAI-compatible embeddings HTTP API (e2e)", () => {
     ]);
   });
 
-  it("supports base64 encoding and agent header routing for config resolution", async () => {
+  it("supports base64 encoding and agent-scoped auth/config resolution", async () => {
     const res = await postEmbeddings(
       {
         model: "text-embedding-3-small",
@@ -100,11 +101,12 @@ describe("OpenAI-compatible embeddings HTTP API (e2e)", () => {
     const json = (await res.json()) as { data?: Array<{ embedding?: string }> };
     expect(typeof json.data?.[0]?.embedding).toBe("string");
     expect(createEmbeddingProviderMock).toHaveBeenCalled();
-    const firstCall = createEmbeddingProviderMock.mock.calls[0]?.[0] as
-      | { provider?: string; model?: string }
+    const lastCall = createEmbeddingProviderMock.mock.calls.at(-1)?.[0] as
+      | { provider?: string; model?: string; fallback?: string; agentDir?: string }
       | undefined;
-    expect(firstCall?.provider).toBe("openai");
-    expect(firstCall?.model).toBe("text-embedding-3-small");
+    expect(lastCall?.model).toBe("text-embedding-3-small");
+    expect(lastCall?.fallback).toBe("none");
+    expect(lastCall?.agentDir).toBe(resolveAgentDir({}, "beta"));
   });
 
   it("rejects invalid input shapes", async () => {

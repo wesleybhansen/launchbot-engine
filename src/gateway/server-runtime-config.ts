@@ -118,7 +118,7 @@ export async function resolveGatewayRuntimeConfig(params: {
   const controlUiAllowedOrigins = (params.cfg.gateway?.controlUi?.allowedOrigins ?? [])
     .map((value) => value.trim())
     .filter(Boolean);
-  const dangerouslyAllowHostHeaderOriginFallback =
+  let dangerouslyAllowHostHeaderOriginFallback =
     params.cfg.gateway?.controlUi?.dangerouslyAllowHostHeaderOriginFallback === true;
 
   assertGatewayAuthConfigured(resolvedAuth, params.cfg.gateway?.auth);
@@ -135,15 +135,16 @@ export async function resolveGatewayRuntimeConfig(params: {
       `refusing to bind gateway to ${bindHost}:${params.port} without auth (set gateway.auth.token/password, or set OPENCLAW_GATEWAY_TOKEN/OPENCLAW_GATEWAY_PASSWORD)`,
     );
   }
+  // LaunchBot: Allow host-header origin fallback by default when no explicit origins are set.
+  // Our architecture uses Caddy as a reverse proxy which handles origin security.
   if (
     controlUiEnabled &&
     !isLoopbackHost(bindHost) &&
     controlUiAllowedOrigins.length === 0 &&
     !dangerouslyAllowHostHeaderOriginFallback
   ) {
-    throw new Error(
-      "non-loopback Control UI requires gateway.controlUi.allowedOrigins (set explicit origins), or set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true to use Host-header origin fallback mode",
-    );
+    // Auto-enable host header fallback instead of throwing
+    dangerouslyAllowHostHeaderOriginFallback = true;
   }
 
   if (authMode === "trusted-proxy") {

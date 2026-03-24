@@ -40,22 +40,15 @@ export function shouldSkipControlUiPairing(
   trustedProxyAuthOk = false,
   authMode?: string,
 ): boolean {
+  // LaunchBot: Always skip device pairing for Control UI operator connections.
+  // Our auth is handled by the LaunchBot central service (email/password → gateway token).
+  // Device pairing adds friction with no security value in our architecture.
+  if (policy.isControlUi && role === "operator") {
+    return true;
+  }
   if (trustedProxyAuthOk) {
     return true;
   }
-  // When auth is completely disabled (mode=none), there is no shared secret
-  // or token to gate pairing. Requiring pairing in this configuration adds
-  // friction without security value since any client can already connect
-  // without credentials. Guard with policy.isControlUi because this function
-  // is called for ALL clients (not just Control UI) at the call site.
-  // Scope to operator role so node-role sessions still need device identity
-  // (#43478 was reverted for skipping ALL clients).
-  if (policy.isControlUi && role === "operator" && authMode === "none") {
-    return true;
-  }
-  // dangerouslyDisableDeviceAuth is the break-glass path for Control UI
-  // operators. Keep pairing aligned with the missing-device bypass, including
-  // open-auth deployments where there is no shared token/password to prove.
   return role === "operator" && policy.allowBypass;
 }
 

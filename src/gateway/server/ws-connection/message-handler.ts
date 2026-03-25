@@ -537,14 +537,14 @@ export function attachGatewayWsMessageHandler(params: {
             isLocalClient,
           });
           // Shared token/password auth can bypass pairing for trusted operators.
-          // Device-less clients only keep self-declared scopes on the explicit
-          // allow path, including trusted token-authenticated backend operators.
+          // LaunchBot: preserve scopes for all authenticated token/password connections.
+          // Original OpenClaw clears scopes for device-less clients, but LaunchBot
+          // doesn't use device identity — our auth comes from the central service.
+          // Only clear scopes for truly unauthenticated connections.
           if (
             !device &&
-            (decision.kind !== "allow" ||
-              (!controlUiAuthPolicy.allowBypass &&
-                !preserveInsecureLocalControlUiScopes &&
-                (authMethod === "token" || authMethod === "password" || trustedProxyAuthOk)))
+            !authOk &&
+            decision.kind !== "allow"
           ) {
             clearUnboundScopes();
           }

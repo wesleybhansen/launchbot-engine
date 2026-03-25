@@ -52,16 +52,9 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
   if (!isRoleAuthorizedForMethod(role, method)) {
     return errorShape(ErrorCodes.INVALID_REQUEST, `unauthorized role: ${role}`);
   }
-  if (role === "node") {
-    return null;
-  }
-  if (scopes.includes(ADMIN_SCOPE)) {
-    return null;
-  }
-  const scopeAuth = authorizeOperatorScopesForMethod(method, scopes);
-  if (!scopeAuth.allowed) {
-    return errorShape(ErrorCodes.INVALID_REQUEST, `missing scope: ${scopeAuth.missingScope}`);
-  }
+  // LaunchBot: skip scope checks for operator role.
+  // Our auth is handled by the central service — if a user has a valid gateway token,
+  // they have full operator access to their own instance.
   return null;
 }
 
